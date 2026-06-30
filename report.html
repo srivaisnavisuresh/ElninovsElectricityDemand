@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forecast Results</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap"
+    rel="stylesheet"
+  >
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="eyebrow">DETAILED REPORT</span>
+        <h1>Forecast Results</h1>
+        <div class="meta-row">
+          <span class="status-dot"></span>
+          <span>Electricity Demand Forecasting System</span>
+        </div>
+      </div>
+      <nav class="topbar-actions">
+        <a href="/" class="btn btn-ghost">Back to Dashboard</a>
+        <a href="/download" class="btn btn-solid">Download Data</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Hero prediction -->
+    {% if prediction %}
+      <div class="hero-card">
+        <span class="eyebrow">PREDICTED ELECTRICITY DEMAND</span>
+        <div class="hero-value">{{ prediction }}</div>
+        <div class="hero-unit">MW</div>
+        <div class="hero-note">
+          Forecast generated using XGBoost, weather inputs, and El Niño indicators
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- 90 day summary -->
+    {% if peak_value %}
+      <div class="kpi-row">
+        <div class="card accent-warm">
+          <span class="card-accent"></span>
+          <span class="card-eyebrow">Peak Forecast Demand</span>
+          <div class="card-value">{{ peak_value }}<span class="unit">MW</span></div>
+          <div class="card-sub">Highest point across the 90-day forecast</div>
+        </div>
+        <div class="card">
+          <span class="card-accent"></span>
+          <span class="card-eyebrow">Peak Demand Date</span>
+          <div class="card-value">{{ peak_date }}</div>
+          <div class="card-sub">Day the forecast peaks</div>
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Forecast table -->
+    {% if forecast_table %}
+      <div class="table-panel">
+        <h2>Forecast Details</h2>
+        <div class="table-scroll">
+          {{ forecast_table | safe }}
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="bottom-actions">
+      <a href="/" class="btn btn-ghost">Back to Dashboard</a>
+      <a href="/download" class="btn btn-solid">Download Forecast Report</a>
+    </div>
+
+    <footer>
+      <hr>
+      <p>El Niño Electricity Forecasting Dashboard</p>
+    </footer>
+
+  </div>
+
+</body>
+</html>
