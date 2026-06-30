@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>El Niño Electricity Forecast Dashboard</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap"
+    rel="stylesheet"
+  >
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="eyebrow">EL NIÑO ENERGY GRID</span>
+        <h1>Electricity Demand Forecast</h1>
+        <div class="meta-row">
+          <span class="status-dot"></span>
+          <span>XGBoost demand-change model</span>
+          <span class="dot-sep">·</span>
+          <span>Updated {{ last_updated }}</span>
+        </div>
+      </div>
+      <nav class="topbar-actions">
+        <a href="/report" class="btn btn-ghost">Detailed Report</a>
+        <a href="/download" class="btn btn-solid">Download Data</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- KPI CARDS -->
+    <div class="cards">
+
+      <div class="card">
+        <span class="card-accent"></span>
+        <span class="card-eyebrow">Current Demand</span>
+        <div class="card-value">{{ current }}<span class="unit">MW</span></div>
+        <div class="card-delta {{ trend_dir }}">
+          {{ "▲" if trend_dir == "up" else "▼" }} {{ trend_pct_abs }}% vs 60-day avg
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="card-accent"></span>
+        <span class="card-eyebrow">60-Day Average</span>
+        <div class="card-value">{{ avg }}<span class="unit">MW</span></div>
+        <div class="card-sub">Baseline reference window</div>
+      </div>
+
+      <div class="card">
+        <span class="card-accent"></span>
+        <span class="card-eyebrow">60-Day Peak</span>
+        <div class="card-value">{{ peak }}<span class="unit">MW</span></div>
+        <div class="card-sub">Highest recorded reading</div>
+      </div>
+
+      <div class="card accent-warm">
+        <span class="card-accent"></span>
+        <span class="card-eyebrow">Tomorrow Forecast</span>
+        <div class="card-value">{{ forecast_value }}<span class="unit">MW</span></div>
+        <div class="card-delta {{ forecast_trend_dir }}">
+          {{ "▲" if forecast_trend_dir == "up" else "▼" }} {{ forecast_trend_pct_abs }}% vs today
+        </div>
+      </div>
+
+    </div>
+
+    <!-- GRAPHS -->
+    <div class="graphs">
+
+      <div class="graph-box">
+        <div class="panel-header">
+          <h2>Historical Demand</h2>
+          <div class="chip-group" data-chart="history">
+            <button class="chip" data-range="7">7D</button>
+            <button class="chip" data-range="30">30D</button>
+            <button class="chip active" data-range="60">60D</button>
+          </div>
+        </div>
+        <div id="historyGraph" class="plot"></div>
+      </div>
+
+      <div class="graph-box">
+        <div class="panel-header">
+          <h2>90-Day Forecast</h2>
+          <div class="panel-controls">
+            <div class="chip-group" data-chart="forecast">
+              <button class="chip" data-range="7">7D</button>
+              <button class="chip" data-range="30">30D</button>
+              <button class="chip" data-range="60">60D</button>
+              <button class="chip active" data-range="90">90D</button>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="bandToggle" checked>
+              <span class="slider"></span>
+              <span>Confidence band</span>
+            </label>
+          </div>
+        </div>
+        <div id="forecastGraph" class="plot"></div>
+      </div>
+
+    </div>
+
+    <footer>
+      <hr>
+      <p>El Niño Electricity Forecasting Dashboard</p>
+    </footer>
+
+  </div>
+
+  <script>
+    // ============================
+    // SHARED THEME
+    // ============================
+    const COLORS = {
+      surge: "#34d8c4",
+      surgeSoft: "rgba(52, 216, 196, 0.18)",
+      anomaly: "#ff9248",
+      anomalySoft: "rgba(255, 146, 72, 0.16)",
+      mist: "#84a3ba",
+      foam: "#eef6fb",
+      grid: "rgba(31, 60, 86, 0.55)",
+      panel: "#102840",
+    };
+
+    const baseLayout = {
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "Inter, sans-serif", color: COLORS.mist, size: 12 },
+      margin: { t: 10, r: 16, b: 36, l: 50 },
+      hovermode: "x unified",
+      hoverlabel: {
+        bgcolor: COLORS.panel,
+        bordercolor: COLORS.grid,
+        font: { color: COLORS.foam, family: "JetBrains Mono", size: 11 },
+      },
+      xaxis: {
+        gridcolor: COLORS.grid,
+        zerolinecolor: COLORS.grid,
+        showspikes: true,
+        spikemode: "across",
+        spikedash: "dot",
+        spikecolor: COLORS.mist,
+        spikethickness: 1,
+      },
+      yaxis: { gridcolor: COLORS.grid, zerolinecolor: COLORS.grid },
+      legend: { orientation: "h", y: 1.15, font: { color: COLORS.mist } },
+    };
+
+    const plotConfig = { displayModeBar: false, responsive: true };
+
+    // ============================
+    // HISTORY GRAPH
+    // ============================
+   const historyDates = JSON.parse('{{ history_dates|tojson|safe }}');
+  const historyValues = JSON.parse('{{ history_values|tojson|safe }}');
+
+    function avgOf(arr) {
+      return arr.reduce((a, b) => a + b, 0) / arr.length;
+    }
+
+    function historyTraces(days) {
+      const hd = historyDates.slice(-days);
+      const hv = historyValues.slice(-days);
+      const a = avgOf(hv);
+      return [
+        {
+          x: hd,
+          y: hv,
+          mode: "lines+markers",
+          name: "Demand",
+          line: { color: COLORS.surge, width: 2.5, shape: "spline" },
+          marker: { size: 4, color: COLORS.surge },
+        },
+        {
+          x: hd,
+          y: Array(hd.length).fill(a),
+          mode: "lines",
+          name: "Average",
+          line: { color: COLORS.mist, width: 1.5, dash: "dot" },
+        },
+      ];
+    }
+
+    Plotly.newPlot("historyGraph", historyTraces(60), baseLayout, plotConfig);
+
+    function updateHistoryRange(days) {
+      Plotly.react("historyGraph", historyTraces(days), baseLayout, plotConfig);
+    }
+
+    // ============================
+    // FORECAST GRAPH
+    // ============================
+    const forecastDates = JSON.parse('{{ forecast_dates|tojson|safe }}');
+    const forecastValues = JSON.parse('{{ forecast_values|tojson|safe }}');
+    const upperAll = JSON.parse('{{ upper|tojson|safe }}');
+    const lowerAll = JSON.parse('{{ lower|tojson|safe }}');
+
+    const todayLevel = Number('{{ current }}');
+    let bandVisible = true;
+
+    function forecastTraces(days) {
+      const fd = forecastDates.slice(0, days);
+      return [
+        {
+          x: fd,
+          y: upperAll.slice(0, days),
+          mode: "lines",
+          line: { width: 0 },
+          showlegend: false,
+          hoverinfo: "skip",
+          visible: bandVisible,
+        },
+        {
+          x: fd,
+          y: lowerAll.slice(0, days),
+          mode: "lines",
+          fill: "tonexty",
+          fillcolor: COLORS.anomalySoft,
+          line: { width: 0 },
+          name: "Confidence band",
+          hoverinfo: "skip",
+          visible: bandVisible,
+        },
+        {
+          x: fd,
+          y: forecastValues.slice(0, days),
+          mode: "lines",
+          name: "Forecast",
+          line: { color: COLORS.anomaly, width: 2.5, shape: "spline" },
+        },
+      ];
+    }
+
+    function forecastLayout(days) {
+      const fd = forecastDates.slice(0, days);
+      return Object.assign({}, baseLayout, {
+        shapes: [
+          {
+            type: "line",
+            x0: fd[0],
+            x1: fd[fd.length - 1],
+            y0: todayLevel,
+            y1: todayLevel,
+            line: { color: COLORS.mist, width: 1, dash: "dash" },
+          },
+        ],
+        annotations: [
+          {
+            x: fd[0],
+            y: todayLevel,
+            text: "today's level",
+            showarrow: false,
+            xanchor: "left",
+            yanchor: "bottom",
+            font: { color: COLORS.mist, size: 10, family: "JetBrains Mono" },
+          },
+        ],
+      });
+    }
+
+    Plotly.newPlot(
+      "forecastGraph",
+      forecastTraces(90),
+      forecastLayout(90),
+      plotConfig
+    );
+
+    function updateForecastRange(days) {
+      Plotly.react(
+        "forecastGraph",
+        forecastTraces(days),
+        forecastLayout(days),
+        plotConfig
+      );
+    }
+
+    document.getElementById("bandToggle").addEventListener("change", function () {
+      bandVisible = this.checked;
+      Plotly.restyle("forecastGraph", { visible: bandVisible }, [0, 1]);
+    });
+
+    // ============================
+    // RANGE CHIP CONTROLS
+    // ============================
+    document.querySelectorAll(".chip-group").forEach((group) => {
+      group.addEventListener("click", (e) => {
+        const btn = e.target.closest(".chip");
+        if (!btn) return;
+
+        group.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
+        btn.classList.add("active");
+
+        const days = parseInt(btn.dataset.range, 10);
+        if (group.dataset.chart === "history") {
+          updateHistoryRange(days);
+        } else {
+          updateForecastRange(days);
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>
