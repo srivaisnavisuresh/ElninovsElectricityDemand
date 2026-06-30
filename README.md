@@ -6,7 +6,7 @@ REVIEW THE PROJECT.DOCX FOR BETTER UNDERSTANDING OF THE PROJECT
 Installation & Setup
 Follow the steps below to set up and run the project on your local machine.
 
-Step 1: Clone the Repository
+##Step 1: Clone the Repository
 bash
 git clone https://github.com/ElNino-Electricity-Demand-Forecasting.git
 
