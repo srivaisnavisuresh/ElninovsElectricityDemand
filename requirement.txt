@@ -1,8 +1,10 @@
 Flask
-pandas
+gunicorn
 numpy
+pandas
 scikit-learn
-xgboost
 joblib
 openpyxl
+xgboost
 matplotlib
+plotly
